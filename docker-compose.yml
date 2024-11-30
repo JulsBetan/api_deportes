@@ -12,9 +12,10 @@ services:
       - db
   db:
     image: postgres:alpine
+    container_name: deportes-db
     environment:
-      POSTGRES_USER: postgres 
       POSTGRES_PASSWORD: password
-      POSTGRES_DB: postgres 
+      POSTGRES_DB: postgres
     ports:
       - "5432:5432"
+    restart: always

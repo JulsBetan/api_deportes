@@ -26,6 +26,6 @@ def create_access_token(data: dict):
 
 def authenticate_user(db, email: str, password: str):
     user = get_user_by_email(db, email)
-    if user and verify_password(password, user.hashed_password):
+    if user and verify_password(password, user.password):
         return user
     return None

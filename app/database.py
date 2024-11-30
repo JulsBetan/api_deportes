@@ -22,7 +22,7 @@ engine = create_engine(connection_string)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
-# Dependency para obtener la sesión de la BD
+#Dependency para obtener la sesión de la BD
 def get_db():
     db = SessionLocal()
     try:
