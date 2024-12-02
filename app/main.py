@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from app.routes import users
+from app.routes.events import router as events
 
 from app.database import Base, engine
 from app.models import User
@@ -18,7 +19,7 @@ def read_root():
 
 app.include_router(users.router, prefix="/users", tags=["Users"])
 
-
+app.include_router(events, prefix="/events", tags=["Events"])
 
 app.add_middleware(
     CORSMiddleware,
