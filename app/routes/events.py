@@ -2,6 +2,11 @@ from fastapi import APIRouter, HTTPException
 import httpx
 from pydantic import BaseModel
 from typing import List
+import openai
+
+import re
+# Configuración de OpenAI
+openai.api_key = "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"
 
 class Event(BaseModel):
     idEvent: str
@@ -17,49 +22,126 @@ class Event(BaseModel):
     idLeague: str
     idVenue: str
     strVenue: str
-    strPronostico: str = ""
+    clima: dict
+    pronostico: str = ""
 
 router = APIRouter()
 
-@router.get("/test")
-async def test_endpoint():
+
+def convert_to_decimal(dms_str: str) -> tuple:
     """
-    Endpoint de prueba para verificar si aparece en Swagger.
+    Convierte coordenadas en formato DMS o decimal a coordenadas decimales.
+    Ejemplo de entrada:
+    - '42°50′14″N 2°41′17″W' (DMS)
+    - '42.2118°N 8.7397°W' (decimal con dirección)
     """
-    return {"message": "Este es un endpoint de prueba"}
+    try:
+        # Patrón para DMS
+        dms_pattern = r"(\d+)°(\d+)′(\d+)″([NSEW])"
+        # Patrón para grados decimales con dirección (ej. '42.2118°N')
+        decimal_pattern = r"([\d\.]+)°([NSEW])"
+
+        dms_matches = re.findall(dms_pattern, dms_str)
+        decimal_matches = re.findall(decimal_pattern, dms_str)
+
+        # Conversión para formato DMS
+        if len(dms_matches) == 2:
+            def dms_to_decimal(degrees, minutes, seconds, direction):
+                decimal = int(degrees) + int(minutes) / 60 + int(seconds) / 3600
+                if direction in ['S', 'W']:
+                    decimal = -decimal
+                return decimal
+
+            lat = dms_to_decimal(*dms_matches[0])
+            lon = dms_to_decimal(*dms_matches[1])
+            return lat, lon
+
+        # Conversión para formato decimal con dirección
+        elif len(decimal_matches) == 2:
+            def decimal_with_direction(value, direction):
+                decimal = float(value)
+                if direction in ['S', 'W']:
+                    decimal = -decimal
+                return decimal
+
+            lat = decimal_with_direction(*decimal_matches[0])
+            lon = decimal_with_direction(*decimal_matches[1])
+            return lat, lon
+
+        # Si no se encontró un formato válido
+        return None
+
+    except Exception as e:
+        print(f"Error al convertir coordenadas: {e}")
+        return None
+
+
+async def get_weather_by_coordinates(coordinates: str, date: str) -> dict:
+   
+    latitude, longitude = convert_to_decimal(coordinates)
+
+    api_key = "463ca9e5942ef1c2e2f27e48e3670de7"
+    url = f"http://api.openweathermap.org/data/2.5/weather?lat={latitude}&lon={longitude}&appid={api_key}&units=metric"
+
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(url)
+            response.raise_for_status()
+            weather_data = response.json()
+            return {
+                "temperature": weather_data["main"]["temp"],
+                "wind_speed": weather_data["wind"]["speed"],
+                "description": weather_data["weather"][0]["description"],
+            }
+        except httpx.RequestError as e:
+            return {"temperature": "Desconocida", "wind_speed": "Desconocido", "description": f"Error: {e}"}
+
+# Función para obtener `strCity` del evento
+async def get_city_for_event(id_venue: str, country: str) -> str:
+    api_url = f"https://www.thesportsdb.com/api/v1/json/801881/lookupvenue.php?id={id_venue}"
+    async with httpx.AsyncClient() as client:
+        try:
+            print("Consultando evento:", id_venue)
+            response = await client.get(api_url)
+            response.raise_for_status()
+            event_data = response.json()
+
+            # Imprime la estructura completa de la respuesta
+            print(f"Respuesta del evento {id_venue}:", event_data)
+
+            if "venues" in event_data and event_data["venues"]:
+                city = event_data["venues"][0].get("strMap", None)
+                print(f"Ciudad obtenida para el evento {id_venue}: {city}")
+                return city if city else country  # Si no hay ciudad, usa home_team
+            return country  
+        except httpx.RequestError as e:
+            print(f"Error al consultar el evento {id_venue}: {e}")
+            return country 
 
 # Función para obtener el pronóstico usando OpenAI
 async def get_match_prediction(home_team: str, away_team: str, date: str, weather: dict) -> str:
+    tokens = 200
     prompt = f"""
     Análisis del Partido: {home_team} vs {away_team}
     Fecha: {date}
     Clima: Temperatura {weather['temperature']}°C, Viento {weather['wind_speed']} km/h, Condiciones {weather['description']}
-    Basado en las condiciones climáticas y el contexto actual, ¿qué pronóstico harías para este partido?
-    Proporciona un análisis detallado y considera cómo las condiciones pueden afectar el juego.
+    Basado en las condiciones climáticas y el contexto actual de los equipos, ¿qué pronóstico harías para este partido?
+    Proporciona un análisis breve, conciso y considera cómo las condiciones pueden afectar el juego. Procura utilizar menos 
+    de {tokens} tokens y terminar el parrafo al final del texto. 
     """
-    
-    headers = {
-        "Authorization": f"Bearer YOUR_OPENAI_API_KEY",
-        "Content-Type": "application/json",
-    }
-    data = {
-        "model": "text-davinci-003",
-        "prompt": prompt,
-        "max_tokens": 150,
-    }
-
-    async with httpx.AsyncClient() as client:
-        try:
-            response = await client.post("https://api.openai.com/v1/completions", json=data, headers=headers)
-            response.raise_for_status()
-            chat_response = response.json()
-            return chat_response["choices"][0]["text"].strip()
-        except httpx.RequestError as e:
-            return f"Error al obtener el pronóstico: {e}"
+    try:
+        response = openai.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=200,
+        )
+        return response.choices[0].message.content.strip()
+    except openai.OpenAIError as e:
+        return f"Error al obtener el pronóstico: {str(e)}"
 
 # Función para obtener el clima
 async def get_weather(city: str, date: str) -> dict:
-    api_key = "YOUR_WEATHER_API_KEY"  # Clave de OpenWeatherMap u otro servicio
+    api_key = "463ca9e5942ef1c2e2f27e48e3670de7"
     url = f"http://api.openweathermap.org/data/2.5/weather?q={city}&appid={api_key}&units=metric"
     
     async with httpx.AsyncClient() as client:
@@ -73,68 +155,71 @@ async def get_weather(city: str, date: str) -> dict:
                 "description": weather_data["weather"][0]["description"],
             }
         except httpx.RequestError as e:
-            return {"error": f"Error al obtener el clima: {e}"}
-
+            return {"temperature": "Desconocida", "wind_speed": "Desconocido", "description": f"Error: {e}"}
 
 # Define el endpoint
-@router.get("/next", response_model=list[Event])
+@router.get("/next", response_model=List[Event])
 async def get_next_events():
-    # URL de la API de terceros
-    api_url = "https://www.thesportsdb.com/api/v1/json/3/eventsnext.php?id=4335"
+    api_url = "https://www.thesportsdb.com/api/v1/json/801881/eventsnextleague.php?id=4335"
 
     try:
-        # Realiza la solicitud a la API externa
         async with httpx.AsyncClient() as client:
             response = await client.get(api_url)
-            response.raise_for_status()  # Lanza una excepción si el estado no es 200
+            response.raise_for_status()
 
-        # Procesa la respuesta
         data = response.json()
-
-        # Extrae los eventos y los campos deseados
         events = data.get("events", [])
-
-       enriched_events = []
+        enriched_events = []
 
         for event in events:
-            # Extrae datos básicos del evento
             home_team = event.get("strHomeTeam")
             away_team = event.get("strAwayTeam")
             date_event = event.get("dateEvent")
-            venue = event.get("strVenue", "Unknown location")
+            id_event = event.get("idEvent")
+            country = event.get("strCountry")
+            venue = event.get("idVenue")
 
-            # Obtén el clima y el pronóstico
-            weather = await get_weather(venue, date_event)
+           
+            # Obtener la ciudad del evento, buscando primero strMap
+            city_or_map = await get_city_for_event(venue, country)
+
+            if re.search(r"°|′|″", city_or_map):  # Detectar si la respuesta contiene coordenadas (strMap)
+                print(f"Usando coordenadas: {city_or_map}")
+                weather = await get_weather_by_coordinates(city_or_map, date_event)
+            else:
+                print(f"Usando ciudad o país: {city_or_map}")
+                weather = await get_weather(city_or_map, date_event) 
+
+            # Obtener el pronóstico
             pronostico = await get_match_prediction(home_team, away_team, date_event, weather)
 
-            # Enriquecer el evento con el pronóstico
-            enriched_events.append({
-                "idEvent": event.get("idEvent"),
-                "strEvent": event.get("strEvent"),
-                "strHomeTeam": home_team,
-                "strAwayTeam": away_team,
-                "idHomeTeam": event.get("idHomeTeam"),
-                "idAwayTeam": event.get("idAwayTeam"),
-                "dateEvent": date_event,
-                "strTime": event.get("strTime"),
-                "strHomeTeamBadge": event.get("strHomeTeamBadge"),
-                "strAwayTeamBadge": event.get("strAwayTeamBadge"),
-                "idLeague": event.get("idLeague"),
-                "idVenue": event.get("idVenue"),
-                "strVenue": venue,
-                "Pronostico": pronostico,
-            })
+            # Enriquecer el evento con clima y pronóstico
+            enriched_events.append(Event(
+                idEvent=id_event,
+                strEvent=event.get("strEvent"),
+                strHomeTeam=home_team,
+                strAwayTeam=away_team,
+                idHomeTeam=event.get("idHomeTeam"),
+                idAwayTeam=event.get("idAwayTeam"),
+                dateEvent=date_event,
+                strTime=event.get("strTime"),
+                strHomeTeamBadge=event.get("strHomeTeamBadge"),
+                strAwayTeamBadge=event.get("strAwayTeamBadge"),
+                idLeague=event.get("idLeague"),
+                idVenue=event.get("idVenue"),
+                strVenue=event.get("strVenue", "Desconocido"),
+                clima=weather,
+                pronostico=pronostico,
+            ))
 
-        return enriched_events 
+        return enriched_events
 
     except httpx.RequestError as e:
-        # Maneja errores relacionados con la solicitud
         raise HTTPException(
             status_code=500,
             detail=f"Error al comunicarse con la API externa: {e}",
         )
     except Exception as e:
-        # Maneja errores generales
         raise HTTPException(
             status_code=500,
             detail=f"Error inesperado: {e}",
