@@ -5,8 +5,16 @@ from typing import List
 import openai
 
 import re
-# Configuración de OpenAI
-openai.api_key = "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"
+
+from app.config import get_settings
+
+settings = get_settings()
+
+OPENAI_KEY = settings.openai_key
+WEATHER_KEY = settings.weather_key
+SPORTS_KEY = settings.sports_key
+
+openai.api_key = OPENAI_KEY
 
 class Event(BaseModel):
     idEvent: str
@@ -80,7 +88,7 @@ async def get_weather_by_coordinates(coordinates: str, date: str) -> dict:
    
     latitude, longitude = convert_to_decimal(coordinates)
 
-    api_key = "463ca9e5942ef1c2e2f27e48e3670de7"
+    api_key = WEATHER_KEY
     url = f"http://api.openweathermap.org/data/2.5/weather?lat={latitude}&lon={longitude}&appid={api_key}&units=metric"
 
     async with httpx.AsyncClient() as client:
@@ -98,7 +106,8 @@ async def get_weather_by_coordinates(coordinates: str, date: str) -> dict:
 
 # Función para obtener `strCity` del evento
 async def get_city_for_event(id_venue: str, country: str) -> str:
-    api_url = f"https://www.thesportsdb.com/api/v1/json/801881/lookupvenue.php?id={id_venue}"
+    sports_key = SPORTS_KEY
+    api_url = f"https://www.thesportsdb.com/api/v1/json/{sports_key}/lookupvenue.php?id={id_venue}"
     async with httpx.AsyncClient() as client:
         try:
             print("Consultando evento:", id_venue)
@@ -141,7 +150,7 @@ async def get_match_prediction(home_team: str, away_team: str, date: str, weathe
 
 # Función para obtener el clima
 async def get_weather(city: str, date: str) -> dict:
-    api_key = "463ca9e5942ef1c2e2f27e48e3670de7"
+    api_key = WEATHER_KEY
     url = f"http://api.openweathermap.org/data/2.5/weather?q={city}&appid={api_key}&units=metric"
     
     async with httpx.AsyncClient() as client:
@@ -160,7 +169,8 @@ async def get_weather(city: str, date: str) -> dict:
 # Define el endpoint
 @router.get("/next", response_model=List[Event])
 async def get_next_events():
-    api_url = "https://www.thesportsdb.com/api/v1/json/801881/eventsnextleague.php?id=4335"
+    sports_key = SPORTS_KEY
+    api_url = f"https://www.thesportsdb.com/api/v1/json/{sports_key}/eventsnextleague.php?id=4335"
 
     try:
         async with httpx.AsyncClient() as client:

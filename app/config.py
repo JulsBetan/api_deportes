@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     db_name: str
     secret_key: str
     algorithm: str
+    openai_key: str
+    weather_key: str
+    sports_key: str
 
     class Config:
 
