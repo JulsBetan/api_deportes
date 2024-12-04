@@ -1,0 +1,37 @@
+name: Deploy Backend
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Log in to Docker Hub
+      uses: docker/login-action@v2
+      with:
+        username: ${{ secrets.DOCKER_HUB_USERNAME }}
+        password: ${{ secrets.DOCKER_HUB_PASSWORD }}
+
+    - name: Build and push Docker image
+      run: |
+        docker build -t ${{ secrets.DOCKER_HUB_USERNAME }}/api_deportes:latest .
+        docker push ${{ secrets.DOCKER_HUB_USERNAME }}/api_deportes:latest
+
+    - name: Deploy to Droplet with docker-compose
+      uses: appleboy/ssh-action@v0.1.7
+      with:
+        host: ${{ secrets.DIGITALOCEAN_HOST }}
+        username: ${{ secrets.DIGITALOCEAN_USER }}
+        key: ${{ secrets.SSH_PRIVATE_KEY }}
+        script: |
+          cd /root/projects/king_tide/deploy_kingtide
+          docker-compose -f docker-compose.prod.yml pull api
+          docker-compose -f docker-compose.prod.yml up -d --remove-orphans api
+          docker-compose -f docker-compose.prod.yml logs -f api
