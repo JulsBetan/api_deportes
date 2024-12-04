@@ -1,4 +1,9 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
+from sqlalchemy.orm import Session
+from datetime import datetime
+from app.database import get_db
+from app.models import EventModel
+from app.schemas import Event
 import httpx
 from pydantic import BaseModel
 from typing import List
@@ -16,22 +21,22 @@ SPORTS_KEY = settings.sports_key
 
 openai.api_key = OPENAI_KEY
 
-class Event(BaseModel):
-    idEvent: str
-    strEvent: str
-    strHomeTeam: str
-    strAwayTeam: str
-    idHomeTeam: str
-    idAwayTeam: str
-    dateEvent: str
-    strTime: str
-    strHomeTeamBadge: str
-    strAwayTeamBadge: str
-    idLeague: str
-    idVenue: str
-    strVenue: str
-    clima: dict
-    pronostico: str = ""
+# class Event(BaseModel):
+#     idEvent: str
+#     strEvent: str
+#     strHomeTeam: str
+#     strAwayTeam: str
+#     idHomeTeam: str
+#     idAwayTeam: str
+#     dateEvent: str
+#     strTime: str
+#     strHomeTeamBadge: str
+#     strAwayTeamBadge: str
+#     idLeague: str
+#     idVenue: str
+#     strVenue: str
+#     clima: dict
+#     pronostico: str = ""
 
 router = APIRouter()
 
@@ -168,7 +173,7 @@ async def get_weather(city: str, date: str) -> dict:
             return {"temperature": "Desconocida", "wind_speed": "Desconocido", "description": f"Error: {e}"}
 
 # Define el endpoint
-@router.get("/next", response_model=List[Event])
+# @router.get("/next", response_model=List[Event])
 async def get_next_events():
     sports_key = SPORTS_KEY
     api_url = f"https://www.thesportsdb.com/api/v1/json/{sports_key}/eventsnextleague.php?id=4335"
@@ -235,3 +240,92 @@ async def get_next_events():
             status_code=500,
             detail=f"Error inesperado: {e}",
         )
+
+@router.post("/update-events")
+async def update_events(db: Session = Depends(get_db)):
+    sports_key = SPORTS_KEY
+    league_ids = ["4335", "4351"]  # IDs de las ligas a consultar
+    all_enriched_events = []
+
+    for id_league in league_ids:
+        api_url = f"https://www.thesportsdb.com/api/v1/json/{sports_key}/eventsnextleague.php?id={id_league}"
+
+        try:
+            # Obtener los eventos desde el API
+            async with httpx.AsyncClient() as client:
+                response = await client.get(api_url)
+                response.raise_for_status()
+
+            data = response.json()
+            events = data.get("events", [])
+
+            for event in events:
+                id_event = event.get("idEvent")
+                home_team = event.get("strHomeTeam")
+                away_team = event.get("strAwayTeam")
+                date_event = event.get("dateEvent")
+                country = event.get("strCountry")
+                venue = event.get("idVenue")
+
+                # Obtener la ciudad o coordenadas
+                city_or_map = await get_city_for_event(venue, country)
+                if re.search(r"°|′|″", city_or_map):
+                    print(f"Usando coordenadas: {city_or_map}")
+                    weather = await get_weather_by_coordinates(city_or_map, date_event)
+                else:
+                    print(f"Usando ciudad o país: {city_or_map}")
+                    weather = await get_weather(city_or_map, date_event)
+
+                # Obtener el pronóstico
+                pronostico = await get_match_prediction(home_team, away_team, date_event, weather)
+
+                # Enriquecer el evento
+                enriched_event = {
+                    "idEvent": id_event,
+                    "strEvent": event.get("strEvent"),
+                    "strHomeTeam": home_team,
+                    "strAwayTeam": away_team,
+                    "idHomeTeam": event.get("idHomeTeam"),
+                    "idAwayTeam": event.get("idAwayTeam"),
+                    "dateEvent": event.get("dateEvent"),
+                    "strTime": event.get("strTime"),
+                    "strHomeTeamBadge": event.get("strHomeTeamBadge"),
+                    "strAwayTeamBadge": event.get("strAwayTeamBadge"),
+                    "idLeague": id_league,
+                    "idVenue": event.get("idVenue"),
+                    "strVenue": event.get("strVenue", "Desconocido"),
+                    "clima": weather,
+                    "pronostico": pronostico,
+                }
+
+                # Guardar o actualizar en la base de datos
+                existing_event = db.query(EventModel).filter_by(id_event=id_event).first()
+                if existing_event:
+                    existing_event.event_data = enriched_event
+                    existing_event.updated_at = datetime.now()
+                else:
+                    new_event = EventModel(
+                        id_event=id_event,
+                        id_league=id_league,
+                        date_event=date_event,
+                        event_data=enriched_event
+                    )
+                    db.add(new_event)
+                db.commit()
+
+                all_enriched_events.append(enriched_event)
+
+        except httpx.RequestError as e:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Error al comunicarse con la API externa: {e}",
+            )
+
+    return {"message": "Eventos actualizados exitosamente", "events": all_enriched_events}
+
+@router.get("/next", response_model=List[Event])
+def get_next_events(db: Session = Depends(get_db)):
+    # Consultar todos los eventos desde la base de datos
+    events = db.query(EventModel).order_by(EventModel.date_event).all()
+    # Transformar event_data (JSON) a la estructura de Event
+    return [Event(**event.event_data) for event in events]
