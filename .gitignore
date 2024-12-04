@@ -1,3 +1,15 @@
 .DS_Store
 venv
 db-data
+# Ignorar archivos de bytecode de Python
+*.pyc
+*.pyo
+__pycache__/
+
+# Ignorar archivos de compilación de Python específicos
+*.pyd
+*.pdb
+*.egg
+*.egg-info/
+dist/
+build/
