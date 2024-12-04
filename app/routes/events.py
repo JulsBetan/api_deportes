@@ -41,13 +41,14 @@ def convert_to_decimal(dms_str: str) -> tuple:
     Convierte coordenadas en formato DMS o decimal a coordenadas decimales.
     Ejemplo de entrada:
     - '42°50′14″N 2°41′17″W' (DMS)
+    - '42°50′14″N 2°41′17″O' (DMS con "O" para oeste)
     - '42.2118°N 8.7397°W' (decimal con dirección)
     """
     try:
         # Patrón para DMS
-        dms_pattern = r"(\d+)°(\d+)′(\d+)″([NSEW])"
+        dms_pattern = r"(\d+)°(\d+)′(\d+)″([NSEWO])"
         # Patrón para grados decimales con dirección (ej. '42.2118°N')
-        decimal_pattern = r"([\d\.]+)°([NSEW])"
+        decimal_pattern = r"([\d\.]+)°([NSEWO])"
 
         dms_matches = re.findall(dms_pattern, dms_str)
         decimal_matches = re.findall(decimal_pattern, dms_str)
@@ -56,7 +57,7 @@ def convert_to_decimal(dms_str: str) -> tuple:
         if len(dms_matches) == 2:
             def dms_to_decimal(degrees, minutes, seconds, direction):
                 decimal = int(degrees) + int(minutes) / 60 + int(seconds) / 3600
-                if direction in ['S', 'W']:
+                if direction in ['S', 'W', 'O']:  # Considera 'O' como oeste
                     decimal = -decimal
                 return decimal
 
@@ -68,7 +69,7 @@ def convert_to_decimal(dms_str: str) -> tuple:
         elif len(decimal_matches) == 2:
             def decimal_with_direction(value, direction):
                 decimal = float(value)
-                if direction in ['S', 'W']:
+                if direction in ['S', 'W', 'O']:  # Considera 'O' como oeste
                     decimal = -decimal
                 return decimal
 
