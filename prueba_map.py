@@ -50,7 +50,7 @@ def convert_to_decimal(dms_str: str) -> tuple:
 
 # Ejemplo de uso
 dms_input = "39°56′39″N 0°06′13″O"
-decimal_input = "42.2118°N 8.7397°W"
+decimal_input = "42.2118°N 8.7397°W" #"42.2118°N 8.7397°W"
 
 coordinates_dms = convert_to_decimal(dms_input)
 coordinates_decimal = convert_to_decimal(decimal_input)

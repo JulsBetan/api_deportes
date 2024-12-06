@@ -148,7 +148,7 @@ async def get_weather_by_coordinates(coordinates: str, date: str) -> dict:
                 }
         except httpx.RequestError as e:
             # Registrar el error en los logs del servidor
-            print(f"Error al obtener el clima para la ciudad {city}: {e}")
+            print(f"Error al obtener el clima para la ciudad {coordinates}: {e}")
             return {"temperature": "Desconocida", "wind_speed": "Desconocido", "description": "No disponible"}
 
 
