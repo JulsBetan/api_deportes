@@ -16,4 +16,5 @@ app/routes/__pycache__/
 dist/
 build/
 
-.*env
+.dev_env
+.prod_env
