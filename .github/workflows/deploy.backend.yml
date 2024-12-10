@@ -32,7 +32,7 @@ jobs:
           --build-arg OPENAI_KEY=${{ secrets.OPENAI_KEY }} \
           --build-arg WEATHER_KEY=${{ secrets.WEATHER_KEY }} \
           --build-arg SPORTS_KEY=${{ secrets.SPORTS_KEY }} \
-          -t ${{ secrets.DOCKER_HUB_USERNAME }}/api_deportes:latest .
+          -f Dockerfile.prod -t ${{ secrets.DOCKER_HUB_USERNAME }}/api_deportes:latest .
         docker push ${{ secrets.DOCKER_HUB_USERNAME }}/api_deportes:latest
 
     - name: Deploy to Droplet with docker-compose
