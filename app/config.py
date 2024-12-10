@@ -22,10 +22,7 @@ class Settings(BaseSettings):
     sports_key: str
 
     class Config:
-
-        environment: str = os.getenv("ENVIRONMENT", ".dev_env")
-
-        env_file = environment
+        env_file = ".dev_env" if os.getenv("ENVIRONMENT") != "production" else None
 
 
 @lru_cache()

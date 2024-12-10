@@ -238,11 +238,13 @@ async def update_events(db: Session = Depends(get_db)):
             data = response.json()
             events = data.get("events", [])
             ban = 0 # bandera para determinar si buscar weather por country despues de que falla por location 
+            if not events:
+                print(f"No se encontraron eventos para la liga {id_league}")
 
             # Recolectar los idEvent actuales desde la respuesta del API
             current_event_ids = []
 
-            for event in events:
+            for event in events or []: # Para manejar el caso cuando no hay eventos proximos en una liga 
                 id_event = event.get("idEvent")
                 if not id_event:
                     continue
@@ -318,18 +320,17 @@ async def update_events(db: Session = Depends(get_db)):
 
                 all_enriched_events.append(enriched_event)
 
-            # Eliminar eventos que ya no están en la respuesta del API
-            stored_events = db.query(EventModel).filter_by(id_league=id_league).all()
-            for stored_event in stored_events:
-                if stored_event.id_event not in current_event_ids:
-                    db.delete(stored_event)
-            db.commit()
+        except httpx.HTTPStatusError as e:
+            print(f"Error en la API para la liga {id_league}: {e}")
+        except Exception as e:
+            print(f"Error inesperado para la liga {id_league}: {e}")
 
-        except httpx.RequestError as e:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Error al comunicarse con la API externa: {e}",
-            )
+        # Eliminar eventos que ya no están en la respuesta del API
+        stored_events = db.query(EventModel).filter_by(id_league=id_league).all()
+        for stored_event in stored_events:
+            if stored_event.id_event not in current_event_ids:
+                db.delete(stored_event)
+        db.commit()
 
     return {"message": "Eventos actualizados exitosamente", "events": all_enriched_events}
 
