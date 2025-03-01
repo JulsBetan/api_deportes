@@ -17,9 +17,9 @@ app = FastAPI()
 def read_root():
     return {"message": "Welcome to the API"}
 
-app.include_router(users.router, prefix="/api/users", tags=["Users"])
+app.include_router(users.router, prefix="/kingtide/api/users", tags=["Users"])
 
-app.include_router(events, prefix="/api/events", tags=["Events"])
+app.include_router(events, prefix="/kingtide/api/events", tags=["Events"])
 
 app.add_middleware(
     CORSMiddleware,
